@@ -1,4 +1,6 @@
-# Desk_Calendar
+# Desk_Calendar 桌面日历
+一款日历应用，可以固定在桌面上，随手添加一些日程
+
 11.25更新说明：
 1. 优化了代码，使接口的调用更加统一
 2. 修复了记事本窗口大小重启时会复原的问题
@@ -15,5 +17,12 @@
 4.事件可以按照优先级和开始时间排序。
 5.可以自定义背景颜色、文字颜色、字号等。
 6.使用onedrive、百度网盘等自动同步云盘，可以在多个设备上同步日程。
+<img width="1080" height="608" alt="image" src="https://github.com/user-attachments/assets/55fb109c-ca7c-4580-ba0f-d9149f7eaf20" />
+（大概是这么个效果）
 
 操作应该是比较一目了然的，也可以见我的公众号：https://mp.weixin.qq.com/s/-UHcw0PFNpRKQDf9no_wOQ
+
+## 支持和赞助
+<img width="1080" height="376" alt="image" src="https://github.com/user-attachments/assets/ed639e2e-96a9-4248-8a19-88834c296be4" />
+这个项目基本上是用AI完成的，遇到的问题主要是AI额度不够用，如果Buy me a LLM VIP我会非常感谢
+<img width="502" height="276" alt="image" src="https://github.com/user-attachments/assets/e3560d66-eb98-4c08-94d3-a7773a69a8d8" />
