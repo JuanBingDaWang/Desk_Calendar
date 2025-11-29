@@ -170,6 +170,10 @@ class CalendarView(QWidget):
 
         return super().eventFilter(obj, event)
 
+    def refresh_layout(self) -> None:
+        """强制重建网格布局（用于跨天时刷新'今日'高亮背景）"""
+        self._rebuild_grid()
+
     def render_events(self, events_by_date: Dict[str, List[Event]]) -> None:
         """接收 Event 对象列表进行渲染"""
         for i in range(self.grid.count()):

@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         self.reminder = ReminderManager(self.dm)
         # 连接信号，现在接收的是 Event 对象
         self.reminder.reminderTriggered.connect(self._on_reminder)
+        self.reminder.dateChanged.connect(self._on_date_changed)
         self._snoozed_event_ids = set()
 
         self._init_ui()
@@ -418,6 +419,15 @@ class MainWindow(QMainWindow):
             self._snoozed_event_ids.add(event.id)
             QMessageBox.information(dialog, "设置成功", f"已设置在{minutes_diff}分钟后提醒")
 
+    def _on_date_changed(self) -> None:
+        """跨天时自动刷新视图"""
+        # 1. 刷新日历网格布局（更新灰色高亮背景）
+        # 确保你在 calendar_view.py 里加了 refresh_layout 方法（见下方）
+        self.calendar.refresh_layout()
+        
+        # 2. 刷新数据（更新“今日聚焦”列表）
+        self._refresh_views()
+        
 def _ensure_data_path() -> str:
     import os
     import json

@@ -7,6 +7,7 @@ from data_manager import DataManager, Event
 class ReminderManager(QObject):
     # 传递 Event 对象而不是字典，保持类型安全
     reminderTriggered = pyqtSignal(Event)
+    dateChanged = pyqtSignal()
 
     def __init__(self, dm: DataManager, interval_ms: int = 30000):
         super().__init__()
@@ -14,6 +15,7 @@ class ReminderManager(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_reminders)
         self.timer.start(interval_ms)
+        self._current_date = datetime.now().date()
 
     def _calc_trigger_dt(self, e: Event, current_time: datetime) -> Optional[datetime]:
         """计算给定时间附近的触发时间点"""
@@ -57,39 +59,47 @@ class ReminderManager(QObject):
         """定时检查"""
         now = datetime.now().replace(second=0, microsecond=0)
         today_date = now.date()
-        
-        # 使用高效接口获取今天的事件（包含重复事件的虚拟对象，时间已修正为今天）
-        todays_events_dict = self.dm.get_events_between_dates(today_date, today_date)
-        events_list = todays_events_dict.get(today_date.strftime("%Y-%m-%d"), [])
-        
-        for e in events_list:
-            if e.finished: 
-                continue
 
-            # 计算触发时间
-            trig_dt = self._calc_trigger_dt(e, now)
-            if not trig_dt:
-                continue
-            
-            trig_dt = trig_dt.replace(second=0, microsecond=0)
+        if today_date != self._current_date:
+            self._current_date = today_date
+            self.dateChanged.emit() 
+        
+        # 【关键修改】查询范围扩大。
+        # 为了支持“提前 N 天”的提醒，我们需要预读取未来 N 天的日程。
+        # 即使只查未来 7 天，也能覆盖绝大多数需求。如果支持更久，可以设为 30 或 60。
+        look_ahead_days = 30 
+        end_query_date = today_date + timedelta(days=look_ahead_days)
+        
+        # 获取今天到未来 30 天的所有日程
+        events_dict = self.dm.get_events_between_dates(today_date, end_query_date)
+        
+        # 遍历字典中所有的 key (每一天)
+        for date_str, events_list in events_dict.items():
+            for e in events_list:
+                if e.finished: 
+                    continue
 
-            # 判断逻辑：
-            # 1. 当前时间 >= 触发时间
-            # 2. 从未提醒过 OR 上次提醒时间早于本次触发时间 (针对重复事件)
-            should_remind = False
-            
-            if now >= trig_dt:
-                if e.last_reminded_time is None:
-                    should_remind = True
-                elif e.last_reminded_time < trig_dt:
-                    should_remind = True
-            
-            if should_remind:
-                # 找到原始对象进行更新（因为 e 可能是虚拟对象）
-                origin_event = self.dm.get_event(e.id)
-                if origin_event:
-                    # 发出信号
-                    self.reminderTriggered.emit(origin_event)
+                # 计算触发时间
+                trig_dt = self._calc_trigger_dt(e, now)
+                if not trig_dt:
+                    continue
+                
+                trig_dt = trig_dt.replace(second=0, microsecond=0)
+
+                # 判断逻辑... (保持不变)
+                should_remind = False
+                if now >= trig_dt:
+                    # 增加一个保护：如果触发时间太久远（比如 2 天前就该触发了），是否还要弹窗？
+                    # 你的逻辑是只要没提醒过就弹，这没问题，保证不错过。
+                    if e.last_reminded_time is None:
+                        should_remind = True
+                    elif e.last_reminded_time < trig_dt:
+                        should_remind = True
+                
+                if should_remind:
+                    origin_event = self.dm.get_event(e.id)
+                    if origin_event:
+                        self.reminderTriggered.emit(origin_event)
 
     @staticmethod
     def show_notification(tray_icon: QSystemTrayIcon, e: Event) -> QDialog:
@@ -144,10 +154,37 @@ class ReminderManager(QObject):
         e = self.dm.get_event(int(event_id))
         if not e:
             return
-        # 贪睡逻辑：修改为绝对时间提醒，设置为当前+N分钟
-        e.reminder_enabled = True
-        e.reminder_type = "absolute"
-        e.absolute_time = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=int(minutes))
-        # 重置 last_reminded_time 以便下次再次触发
-        e.last_reminded_time = None 
-        self.dm.update_event(e)
+            
+        # === 修复逻辑 ===
+        if e.repeat_rule != "无":
+            # 如果是重复事件，不要修改母体。
+            # 策略：创建一个临时的、一次性的“影子”事件专门用于提醒
+            from copy import deepcopy
+            snooze_event = deepcopy(e)
+            snooze_event.id = 0 # 让 DataManager 分配新 ID
+            snooze_event.uid = None # 生成新 UID
+            snooze_event.title = f"{e.title} (稍后提醒)"
+            snooze_event.repeat_rule = "无"
+            snooze_event.reminder_enabled = True
+            snooze_event.reminder_type = "absolute"
+            
+            # 设置绝对触发时间
+            trigger_time = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=int(minutes))
+            snooze_event.absolute_time = trigger_time
+            
+            # 为了不污染日历视图，我们可以设置一个特殊标记，或者就在日历上显示也没关系
+            # 这里简单处理：作为普通事件插入，但你可以给它加个特殊 tag 让它不在日历显示
+            # 为简单起见，直接作为新事件插入：
+            self.dm.add_event(snooze_event)
+            
+            # 更新原事件的 last_reminded_time 防止再次触发（针对本次）
+            e.last_reminded_time = datetime.now()
+            self.dm.update_event(e)
+            
+        else:
+            # 非重复事件，保持原有逻辑
+            e.reminder_enabled = True
+            e.reminder_type = "absolute"
+            e.absolute_time = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=int(minutes))
+            e.last_reminded_time = None 
+            self.dm.update_event(e)

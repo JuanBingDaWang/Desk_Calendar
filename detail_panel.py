@@ -31,7 +31,13 @@ class DetailPanel(QWidget):
         checkbox = QCheckBox()
         checkbox.setChecked(event.finished)
         checkbox.setProperty("eventId", event.id) 
-        checkbox.stateChanged.connect(self._on_checkbox_state_changed)
+        
+        if event.repeat_rule != "无":
+            checkbox.setEnabled(False)
+            checkbox.setToolTip("重复日程无法直接标记完成（这会影响所有日期的状态）")
+        else:
+            checkbox.stateChanged.connect(self._on_checkbox_state_changed)
+
         h_layout.addWidget(checkbox)
         
         time_str = event.start_time.strftime("%H:%M")
