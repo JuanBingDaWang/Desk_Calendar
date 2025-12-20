@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QDateTimeEdit,
     QTextEdit, QPushButton, QCheckBox, QComboBox, QSpinBox, QMessageBox,
-    QDateEdit
+    QDateEdit, QGroupBox, QFormLayout, QWidget
 )
 from PyQt5.QtCore import Qt, QDateTime, QDate, QTime
 from PyQt5.QtGui import QIntValidator
@@ -14,142 +14,253 @@ class EventDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.setWindowTitle("新建/编辑日程")
-        self.setFixedSize(420, 600)
+        self.setFixedSize(450, 650)
+        
+        # 读取主程序配置的背景色和字体色（如果可用）
+        bg_color = "#f0f0f0" # 默认背景
+        font_color = "#000000" # 默认字体
+        
+        if parent and hasattr(parent, 'dm'):
+            s = parent.dm.get_settings()
+            bg_color = s.get("bg_color", "#f0f0f0")
+            font_color = s.get("font_color", "#000000")
+            
+        bg_rgba = self._hex_to_rgba(bg_color, 100) # 强制 100% 不透明
+        
+        # 动态设置字体颜色和背景色
+        # 新增：针对输入框 (QLineEdit, QComboBox, etc.) 也应用背景色和字体色
+        self.setStyleSheet(f"""
+            QDialog {{ color: {font_color}; background-color: {bg_rgba}; }}
+            QGroupBox {{ font-weight: bold; border: 1px solid gray; border-radius: 5px; margin-top: 10px; padding-top: 15px; background-color: transparent; }}
+            QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; color: {font_color}; }}
+            QLabel, QCheckBox {{ color: {font_color}; background-color: transparent; }}
+            
+            /* 输入控件统一风格 */
+            QLineEdit, QTextEdit, QSpinBox, QComboBox, QDateEdit, QDateTimeEdit {{
+                background-color: {bg_rgba};
+                color: {font_color};
+                border: 1px solid #a0a0a0;
+                border-radius: 3px;
+                padding: 2px;
+                selection-background-color: darkgray;
+            }}
+            /* 下拉列表的 ItemView 背景 */
+            QComboBox QAbstractItemView {{
+                background-color: {bg_rgba};
+                color: {font_color};
+                selection-background-color: darkgray;
+            }}
+        """)
         
         self.start_dt_final = None
         self.end_dt_final = None
         
         self._init_ui(event, default_start_dt)
 
+    def _hex_to_rgba(self, hex_code: str, alpha_percent: int) -> str:
+        hex_code = hex_code.lstrip('#')
+        if len(hex_code) == 6:
+            r = int(hex_code[0:2], 16)
+            g = int(hex_code[2:4], 16)
+            b = int(hex_code[4:6], 16)
+            a = int(alpha_percent * 255 / 100)
+            return f"rgba({r}, {g}, {b}, {a})"
+        return hex_code
+
     def _init_ui(self, event: Optional[Event], default_start_dt: Optional[QDateTime]) -> None:
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
         self._original_finished_state = event.finished if event else False
         self.int_validator = QIntValidator(0, 99, self)
 
-        # --- 标题 ---
-        layout.addWidget(QLabel("标题"))
-        self.title_edit = QLineEdit()
-        layout.addWidget(self.title_edit)
-
-        # --- 开始时间 ---
-        layout.addWidget(QLabel("开始时间"))
-        start_layout = QHBoxLayout()
-        self.start_date = QDateEdit()
-        self.start_date.setCalendarPopup(True)
-        self.start_date.setDisplayFormat("yyyy-MM-dd")
-        self.start_hour = QLineEdit()
-        self.start_hour.setPlaceholderText("时"); self.start_hour.setFixedWidth(40); self.start_hour.setValidator(self.int_validator)
-        self.start_hour.editingFinished.connect(lambda: self._fmt_pad(self.start_hour))
-        self.start_minute = QLineEdit()
-        self.start_minute.setPlaceholderText("分"); self.start_minute.setFixedWidth(40); self.start_minute.setValidator(self.int_validator)
-        self.start_minute.editingFinished.connect(lambda: self._fmt_pad(self.start_minute))
-        start_layout.addWidget(self.start_date, 1); start_layout.addStretch()
-        start_layout.addWidget(self.start_hour); start_layout.addWidget(QLabel(":")); start_layout.addWidget(self.start_minute)
-        layout.addLayout(start_layout)
-
-        # --- 结束时间 ---
-        layout.addWidget(QLabel("结束时间"))
-        end_layout = QHBoxLayout()
-        self.end_date = QDateEdit()
-        self.end_date.setCalendarPopup(True)
-        self.end_date.setDisplayFormat("yyyy-MM-dd")
-        self.end_hour = QLineEdit()
-        self.end_hour.setPlaceholderText("时"); self.end_hour.setFixedWidth(40); self.end_hour.setValidator(self.int_validator)
-        self.end_hour.editingFinished.connect(lambda: self._fmt_pad(self.end_hour))
-        self.end_minute = QLineEdit()
-        self.end_minute.setPlaceholderText("分"); self.end_minute.setFixedWidth(40); self.end_minute.setValidator(self.int_validator)
-        self.end_minute.editingFinished.connect(lambda: self._fmt_pad(self.end_minute))
-        end_layout.addWidget(self.end_date, 1); end_layout.addStretch()
-        end_layout.addWidget(self.end_hour); end_layout.addWidget(QLabel(":")); end_layout.addWidget(self.end_minute)
-        layout.addLayout(end_layout)
-
-        # --- 优先级/重复 ---
-        pr_row = QHBoxLayout()
-        pr_row.addWidget(QLabel("优先级")); self.priority = QComboBox(); self.priority.addItems(["低", "中", "高"]); pr_row.addWidget(self.priority)
-        pr_row.addWidget(QLabel("重复")); self.repeat_rule = QComboBox(); self.repeat_rule.addItems(["无", "每日", "每周", "每月", "每年"]); pr_row.addWidget(self.repeat_rule)
-        layout.addLayout(pr_row)
-
-        # --- 提醒 ---
-        layout.addWidget(QLabel("提醒"))
-        self.reminder_enabled = QCheckBox("启用提醒"); self.reminder_enabled.setChecked(False); layout.addWidget(self.reminder_enabled)
-        rem_row1 = QHBoxLayout()
-        self.rem_type = QComboBox(); self.rem_type.addItems(["advance", "absolute"])
-        rem_row1.addWidget(QLabel("方式")); rem_row1.addWidget(self.rem_type)
-        self.advance_value = QSpinBox(); self.advance_value.setRange(1, 10000); self.advance_value.setValue(30)
-        self.advance_unit = QComboBox(); self.advance_unit.addItems(["minutes", "hours", "days"])
-        rem_row1.addWidget(QLabel("提前")); rem_row1.addWidget(self.advance_value); rem_row1.addWidget(self.advance_unit)
-        layout.addLayout(rem_row1)
-        rem_row2 = QHBoxLayout()
-        rem_row2.addWidget(QLabel("绝对时间")); self.absolute_time = QDateTimeEdit(); self.absolute_time.setCalendarPopup(True)
-        rem_row2.addWidget(self.absolute_time); layout.addLayout(rem_row2)
-
-        # --- 备注/按钮 ---
-        layout.addWidget(QLabel("备注")); self.desc = QTextEdit(); self.desc.setFixedHeight(100); layout.addWidget(self.desc)
-        btn_row = QHBoxLayout()
-        self.btn_ok = QPushButton("保存"); self.btn_cancel = QPushButton("取消")
-        self.btn_ok.clicked.connect(self._validate_and_accept); self.btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(self.btn_ok); btn_row.addWidget(self.btn_cancel)
-        layout.addLayout(btn_row)
-        self.setLayout(layout)
-
-        # --- 初始化 ---
-        now = QDateTime.currentDateTime()
-        start_dt = default_start_dt if default_start_dt else now
-        self._set_ui_dt(self.start_date, self.start_hour, self.start_minute, start_dt)
-        self._set_ui_dt(self.end_date, self.end_hour, self.end_minute, start_dt.addSecs(3600))
-        self.absolute_time.setDateTime(start_dt.addSecs(-1800))
-
-        if event:
-            self._fill(event)
-
-        self._sync_reminder_controls()
-        self.rem_type.currentIndexChanged.connect(self._sync_reminder_controls)
-        self.reminder_enabled.stateChanged.connect(self._sync_reminder_controls)
-
-    def _fmt_pad(self, line_edit: QLineEdit) -> None:
-        txt = line_edit.text().strip()
-        if txt.isdigit() and len(txt) == 1: line_edit.setText("0" + txt)
-
-    def _set_ui_dt(self, d_edit: QDateEdit, h_edit: QLineEdit, m_edit: QLineEdit, dt: QDateTime) -> None:
-        d_edit.setDate(dt.date())
-        h_edit.setText(f"{dt.time().hour():02d}")
-        m_edit.setText(f"{dt.time().minute():02d}")
-
-    def _parse_ui_dt(self, d_edit: QDateEdit, h_edit: QLineEdit, m_edit: QLineEdit, name: str) -> Tuple[Optional[QDateTime], str]:
-        h_str = h_edit.text().strip(); m_str = m_edit.text().strip()
-        if not h_str or not m_str: return None, f"“{name}”的时间不能为空"
-        if not (h_str.isdigit() and m_str.isdigit()): return None, f"“{name}”的时间必须是整数"
-        h = int(h_str); m = int(m_str)
-        if not (0 <= h <= 23) or not (0 <= m <= 59): return None, f"“{name}”的时间超出范围"
-        return QDateTime(d_edit.date(), QTime(h, m)), ""
-
-    def _sync_reminder_controls(self) -> None:
-        enabled = self.reminder_enabled.isChecked()
-        is_abs = self.rem_type.currentText() == "absolute"
-        self.advance_value.setEnabled(enabled and not is_abs)
-        self.advance_unit.setEnabled(enabled and not is_abs)
-        self.absolute_time.setEnabled(enabled and is_abs)
-
-    def _fill(self, e: Event) -> None:
-        self.title_edit.setText(e.title)
-        self.priority.setCurrentText(e.priority)
-        self.repeat_rule.setCurrentText(e.repeat_rule)
-        self.desc.setPlainText(e.description)
-
-        self._set_ui_dt(self.start_date, self.start_hour, self.start_minute, QDateTime(e.start_time))
-        # Handle case where end_time might be None (though DataManager ensures defaults)
-        et = e.end_time if e.end_time else e.start_time
-        self._set_ui_dt(self.end_date, self.end_hour, self.end_minute, QDateTime(et))
-
-        self.reminder_enabled.setChecked(e.reminder_enabled)
-        self.rem_type.setCurrentText(e.reminder_type)
-        self.advance_value.setValue(e.advance_value)
-        self.advance_unit.setCurrentText(e.advance_unit)
+        # === 1. 基本信息 ===
+        grp_basic = QGroupBox("基本信息")
+        lay_basic = QFormLayout(grp_basic)
         
-        if e.absolute_time:
-            self.absolute_time.setDateTime(QDateTime(e.absolute_time))
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("请输入日程标题...")
+        lay_basic.addRow("标题:", self.title_edit)
 
-    def _validate_and_accept(self) -> None:
+        h_opts = QHBoxLayout()
+        self.priority = QComboBox()
+        self.priority.addItems(["高", "中", "低"])
+        self.repeat_rule = QComboBox()
+        self.repeat_rule.addItems(["无", "每日", "每周", "每月", "每年"])
+        h_opts.addWidget(QLabel("优先级:"))
+        h_opts.addWidget(self.priority)
+        h_opts.addSpacing(15)
+        h_opts.addWidget(QLabel("重复:"))
+        h_opts.addWidget(self.repeat_rule)
+        lay_basic.addRow(h_opts)
+        
+        layout.addWidget(grp_basic)
+
+        # === 2. 时间设置 ===
+        grp_time = QGroupBox("时间设置")
+        lay_time = QFormLayout(grp_time)
+
+        # 辅助函数：创建时间选择行
+        def make_time_row(label_text):
+            date_ed = QDateEdit()
+            date_ed.setCalendarPopup(True)
+            date_ed.setDisplayFormat("yyyy-MM-dd")
+            hour_sp = QSpinBox(); hour_sp.setRange(0, 23)
+            min_sp = QSpinBox(); min_sp.setRange(0, 59)
+            row = QHBoxLayout()
+            row.addWidget(date_ed)
+            row.addSpacing(5)
+            row.addWidget(hour_sp); row.addWidget(QLabel("时"))
+            row.addWidget(min_sp); row.addWidget(QLabel("分"))
+            return date_ed, hour_sp, min_sp, row
+
+        self.start_date, self.start_hour, self.start_minute, row_start = make_time_row("开始时间")
+        lay_time.addRow("开始时间:", row_start)
+
+        self.end_date, self.end_hour, self.end_minute, row_end = make_time_row("结束时间")
+        lay_time.addRow("结束时间:", row_end)
+        
+        layout.addWidget(grp_time)
+
+        # === 3. 提醒设置 ===
+        grp_rem = QGroupBox("提醒设置")
+        lay_rem = QVBoxLayout(grp_rem)
+        
+        self.reminder_grp = QCheckBox("启用提醒")
+        self.reminder_grp.stateChanged.connect(self._toggle_reminder_ui)
+        lay_rem.addWidget(self.reminder_grp)
+        
+        self.rem_ui_widget = QWidget()
+        rem_inner = QVBoxLayout(self.rem_ui_widget)
+        rem_inner.setContentsMargins(0, 5, 0, 0)
+        
+        # 提醒类型
+        r_type = QHBoxLayout()
+        r_type.addWidget(QLabel("类型:"))
+        self.rem_type = QComboBox()
+        self.rem_type.addItem("提前提醒 (如: 提前10分钟)", "advance")
+        self.rem_type.addItem("绝对时间 (如: 2023-01-01 10:00)", "absolute")
+        self.rem_type.currentIndexChanged.connect(self._toggle_rem_type_ui)
+        r_type.addWidget(self.rem_type, 1)
+        rem_inner.addLayout(r_type)
+        
+        # 提前量UI
+        self.adv_widget = QWidget()
+        adv_lay = QHBoxLayout(self.adv_widget)
+        adv_lay.setContentsMargins(0, 0, 0, 0)
+        self.advance_value = QSpinBox(); self.advance_value.setRange(1, 9999)
+        self.advance_unit = QComboBox()
+        self.advance_unit.addItems(["minutes", "hours", "days"])
+        adv_lay.addWidget(QLabel("提前:"))
+        adv_lay.addWidget(self.advance_value)
+        adv_lay.addWidget(self.advance_unit, 1)
+        rem_inner.addWidget(self.adv_widget)
+        
+        # 绝对时间UI
+        self.abs_widget = QWidget()
+        abs_lay = QHBoxLayout(self.abs_widget)
+        abs_lay.setContentsMargins(0, 0, 0, 0)
+        self.abs_dt_edit = QDateTimeEdit()
+        self.abs_dt_edit.setCalendarPopup(True)
+        abs_lay.addWidget(QLabel("时间点:"))
+        abs_lay.addWidget(self.abs_dt_edit, 1)
+        rem_inner.addWidget(self.abs_widget)
+        
+        lay_rem.addWidget(self.rem_ui_widget)
+        layout.addWidget(grp_rem)
+
+        # === 4. 描述/备注 ===
+        layout.addWidget(QLabel("<b>描述/备注:</b>"))
+        self.desc_edit = QTextEdit()
+        layout.addWidget(self.desc_edit)
+
+        # --- 底部按钮 ---
+        btn_layout = QHBoxLayout()
+        btn_cancel = QPushButton("取消")
+        btn_save = QPushButton("保存")
+        btn_cancel.clicked.connect(self.reject)
+        btn_save.clicked.connect(self._on_save)
+        btn_layout.addStretch(1)
+        btn_layout.addWidget(btn_cancel)
+        btn_layout.addWidget(btn_save)
+        layout.addLayout(btn_layout)
+
+        # --- 填充数据 ---
+        self._fill_data(event, default_start_dt)
+
+    def _toggle_reminder_ui(self):
+        enabled = self.reminder_grp.isChecked()
+        self.rem_ui_widget.setVisible(enabled)
+
+    def _toggle_rem_type_ui(self):
+        t = self.rem_type.currentData()
+        self.adv_widget.setVisible(t == "advance")
+        self.abs_widget.setVisible(t == "absolute")
+
+    def _fill_data(self, event: Optional[Event], default_start_dt: Optional[QDateTime]):
+        if event:
+            self.title_edit.setText(event.title)
+            self.desc_edit.setPlainText(event.description)
+            self.priority.setCurrentText(event.priority)
+            self.repeat_rule.setCurrentText(event.repeat_rule)
+            
+            s = event.start_time
+            e = event.end_time
+            self.start_date.setDate(s.date())
+            self.start_hour.setValue(s.hour)
+            self.start_minute.setValue(s.minute)
+            self.end_date.setDate(e.date())
+            self.end_hour.setValue(e.hour)
+            self.end_minute.setValue(e.minute)
+            
+            # Reminder
+            self.reminder_grp.setChecked(event.reminder_enabled)
+            # 使用 findData 查找存储的 key ("advance" 或 "absolute")
+            idx = self.rem_type.findData(event.reminder_type)
+            if idx >= 0: self.rem_type.setCurrentIndex(idx)
+            
+            self.advance_value.setValue(event.advance_value)
+            self.advance_unit.setCurrentText(event.advance_unit)
+            if event.absolute_time:
+                self.abs_dt_edit.setDateTime(event.absolute_time)
+            else:
+                self.abs_dt_edit.setDateTime(QDateTime.currentDateTime())
+
+        else:
+            # New event
+            self.priority.setCurrentText("中")
+            self.repeat_rule.setCurrentText("无")
+            if default_start_dt:
+                base = default_start_dt
+            else:
+                # Round to nearest hour
+                now = QDateTime.currentDateTime()
+                base = now.addSecs(3600 - (now.time().minute() * 60 + now.time().second()))
+            
+            self.start_date.setDate(base.date())
+            self.start_hour.setValue(base.time().hour())
+            self.start_minute.setValue(base.time().minute())
+            
+            end = base.addSecs(3600)
+            self.end_date.setDate(end.date())
+            self.end_hour.setValue(end.time().hour())
+            self.end_minute.setValue(end.time().minute())
+            
+            self.abs_dt_edit.setDateTime(base)
+            self.reminder_grp.setChecked(False)
+
+        self._toggle_reminder_ui()
+        self._toggle_rem_type_ui()
+
+    def _parse_ui_dt(self, d_widget, h_widget, m_widget, label) -> Tuple[QDateTime, str]:
+        date_val = d_widget.date()
+        h = h_widget.value()
+        m = m_widget.value()
+        return QDateTime(date_val, QTime(h, m)), ""
+
+    def _on_save(self):
+        if not self.title_edit.text().strip():
+            QMessageBox.warning(self, "输入错误", "标题不能为空！")
+            return
+            
         start_dt, err1 = self._parse_ui_dt(self.start_date, self.start_hour, self.start_minute, "开始时间")
         if err1: QMessageBox.warning(self, "时间格式错误", err1); return
 
@@ -172,12 +283,16 @@ class EventDialog(QDialog):
             "repeat_rule": self.repeat_rule.currentText(),
             "reminder": {
                 "enabled": self.reminder_enabled.isChecked(),
-                "type": self.rem_type.currentText(),
+                # BUG修复：使用 currentData() 保存 "advance"/"absolute" 而不是中文显示文本
+                "type": self.rem_type.currentData(),
                 "advance_value": int(self.advance_value.value()),
                 "advance_unit": self.advance_unit.currentText(),
-                "absolute_time": self.absolute_time.dateTime().toString("yyyy-MM-ddTHH:mm")
-                if self.rem_type.currentText() == "absolute" else None,
+                "absolute_time": self.abs_dt_edit.dateTime().toString("yyyy-MM-ddTHH:mm")
             },
-            "finished": self._original_finished_state,
-            "description": self.desc.toPlainText().strip(),
+            "description": self.desc_edit.toPlainText(),
+            "finished": self._original_finished_state
         }
+
+    @property
+    def reminder_enabled(self):
+        return self.reminder_grp

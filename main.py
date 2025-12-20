@@ -437,6 +437,9 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle(f"设置提醒时间 - {event_title}")
         dialog.setFixedSize(400, 200)
         
+        # --- 修改：强制弹窗文字为黑色，背景为白色，确保可见性 ---
+        dialog.setStyleSheet("color: #000000; background-color: #ffffff;")
+        
         layout = QVBoxLayout()
         layout.addWidget(QLabel(f"为事项 '{event_title}' 设置提醒时间:"))
         

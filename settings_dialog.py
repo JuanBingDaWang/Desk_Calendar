@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QSlider, QPushButton,
-    QColorDialog, QCheckBox, QStyleOptionSpinBox, QMessageBox, QComboBox, QFileDialog
+    QColorDialog, QCheckBox, QStyleOptionSpinBox, QMessageBox, QComboBox, 
+    QFileDialog, QGroupBox, QFormLayout
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QPixmap
@@ -14,237 +15,240 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.setWindowTitle("设置")
-        self.setFixedSize(420, 680) 
+        self.setFixedSize(450, 750) 
+        
         self.s = dict(settings)
-        # 获取 DataManager 实例引用，通常 settings 只是字典，我们需要回调或者让 parent 处理
-        # 这里为了简单，我们假设 parent 是 MainWindow，有 dm 属性
         self.main_window = parent 
         if "font_color" not in self.s:
             self.s["font_color"] = "#000000"
             
-        # 修改：设置页面文字颜色固定为黑色，不受全局字体颜色影响
-        self.setStyleSheet("color: #000000;")
-        
         self._init_ui()
+        # 初始化完成后立即应用一次样式
+        self._update_dialog_style()
+
+    def _hex_to_rgba(self, hex_code: str, alpha_percent: int) -> str:
+        """将 hex 颜色和 0-100 的透明度转换为 rgba 字符串"""
+        hex_code = hex_code.lstrip('#')
+        if len(hex_code) == 6:
+            r = int(hex_code[0:2], 16)
+            g = int(hex_code[2:4], 16)
+            b = int(hex_code[4:6], 16)
+            a = int(alpha_percent * 255 / 100)
+            return f"rgba({r}, {g}, {b}, {a})"
+        return hex_code
+
+    def _update_dialog_style(self):
+        """根据当前控件的值动态更新自身样式"""
+        # 获取当前界面上的值（实现实时预览自身）
+        vals = self.values()
+        bg_hex = vals.get("bg_color", "#ffffff")
+        font_hex = vals.get("font_color", "#000000")
+        
+        # 强制使用 100% 不透明，防止背景变黑
+        bg_rgba = self._hex_to_rgba(bg_hex, 100)
+        
+        # 动态应用背景色和字体色，同时设置输入框样式
+        self.setStyleSheet(f"""
+            QDialog {{ 
+                color: {font_hex}; 
+                background-color: {bg_rgba}; 
+            }}
+            QGroupBox {{ 
+                font-weight: bold; 
+                margin-top: 10px; 
+                border: 1px solid gray; 
+                border-radius: 5px; 
+                padding-top: 15px; 
+                background-color: transparent; 
+            }}
+            QGroupBox::title {{ 
+                subcontrol-origin: margin; 
+                subcontrol-position: top left; 
+                padding: 0 5px; 
+                color: {font_hex};
+            }}
+            QLabel, QCheckBox {{ color: {font_hex}; background-color: transparent; }}
+            
+            /* 输入控件统一风格 */
+            QComboBox, QSpinBox {{
+                background-color: {bg_rgba};
+                color: {font_hex};
+                border: 1px solid #a0a0a0;
+                border-radius: 3px;
+                padding: 2px;
+                selection-background-color: darkgray;
+            }}
+            /* 列表下拉框 */
+            QComboBox QAbstractItemView {{
+                background-color: {bg_rgba};
+                color: {font_hex};
+                selection-background-color: darkgray;
+            }}
+        """)
 
     def _init_ui(self):
-        lay = QVBoxLayout(self)
-
-        # --- 存储设置 ---
-        store_grp = QHBoxLayout()
-        store_grp.addWidget(QLabel("存储模式"))
+        main_layout = QVBoxLayout(self)
+        
+        # === 分组1：数据与存储 ===
+        grp_data = QGroupBox("数据与存储")
+        lay_data = QVBoxLayout(grp_data)
+        
+        h_store = QHBoxLayout()
+        h_store.addWidget(QLabel("存储模式:"))
         self.storage_mode = QComboBox()
         self.storage_mode.addItem("ICS文件 (通用)", "ics")
         self.storage_mode.addItem("SQLite数据库 (高性能)", "sqlite")
-        
         current_mode = self.s.get("storage_mode", "ics")
         idx = self.storage_mode.findData(current_mode)
         if idx >= 0: self.storage_mode.setCurrentIndex(idx)
-        
-        # 存储模式变更由确认按钮统一处理，防止误触
-        store_grp.addWidget(self.storage_mode)
-        lay.addLayout(store_grp)
+        h_store.addWidget(self.storage_mode, 1)
+        lay_data.addLayout(h_store)
 
-        # --- 数据导入导出 ---
-        io_row = QHBoxLayout()
-        
-        self.btn_import = QPushButton("导入旧版（ICS）数据")
+        h_io = QHBoxLayout()
+        self.btn_import = QPushButton("导入 ICS")
         self.btn_import.clicked.connect(self._import_data)
-        io_row.addWidget(self.btn_import)
-        
-        self.btn_export = QPushButton("导出数据为通用ICS格式")
+        self.btn_export = QPushButton("导出 ICS")
         self.btn_export.clicked.connect(self._export_data)
-        io_row.addWidget(self.btn_export)
+        h_io.addWidget(self.btn_import)
+        h_io.addWidget(self.btn_export)
+        lay_data.addLayout(h_io)
         
-        lay.addLayout(io_row)
+        main_layout.addWidget(grp_data)
 
-        lay.addWidget(QLabel("<hr>")) # 分割线
-
-        # --- 显示设置 ---
-        disp_row = QHBoxLayout()
+        # === 分组2：外观与显示 ===
+        grp_view = QGroupBox("外观与显示")
+        lay_view = QVBoxLayout(grp_view)
+        
+        # 显隐设置
+        h_chk = QHBoxLayout()
         self.chk_calendar_time = QCheckBox("日历显示时间")
         self.chk_list_time = QCheckBox("列表显示时间")
         self.chk_calendar_time.setChecked(bool(self.s.get("show_time_in_calendar", True)))
         self.chk_list_time.setChecked(bool(self.s.get("show_time_in_list", True)))
         self.chk_calendar_time.stateChanged.connect(self._on_setting_changed)
         self.chk_list_time.stateChanged.connect(self._on_setting_changed)
-        disp_row.addWidget(self.chk_calendar_time)
-        disp_row.addWidget(self.chk_list_time)
-        lay.addLayout(disp_row)
+        h_chk.addWidget(self.chk_calendar_time)
+        h_chk.addWidget(self.chk_list_time)
+        lay_view.addLayout(h_chk)
+        
+        # 颜色设置
+        grid_col = QFormLayout()
+        
+        # 颜色按钮辅助函数
+        def make_color_btn(key):
+            btn = QPushButton()
+            btn.setFixedSize(60, 24)
+            self._update_color_btn(btn, key)
+            btn.clicked.connect(lambda: self._choose_color(key, btn))
+            return btn
+        
+        self.color_btn = make_color_btn("bg_color")
+        self.font_color_btn = make_color_btn("font_color")
+        grid_col.addRow("全局背景:", self.color_btn)
+        grid_col.addRow("默认字体:", self.font_color_btn)
+        
+        h_prio = QHBoxLayout()
+        self.btn_p_high = make_color_btn("font_color_high")
+        self.btn_p_med = make_color_btn("font_color_medium")
+        self.btn_p_low = make_color_btn("font_color_low")
+        h_prio.addWidget(QLabel("高:"))
+        h_prio.addWidget(self.btn_p_high)
+        h_prio.addWidget(QLabel("中:"))
+        h_prio.addWidget(self.btn_p_med)
+        h_prio.addWidget(QLabel("低:"))
+        h_prio.addWidget(self.btn_p_low)
+        grid_col.addRow("优先级颜色:", h_prio)
+        
+        lay_view.addLayout(grid_col)
 
-        # --- 周数 ---
-        row = QHBoxLayout()
-        row.addWidget(QLabel("显示周数"))
+        # 透明度
+        grid_op = QFormLayout()
+        self.opacity = QSlider(Qt.Horizontal)
+        self.opacity.setRange(20, 100)
+        self.opacity.setValue(int(float(self.s.get("opacity", 0.95)) * 100))
+        self.opacity.valueChanged.connect(self._on_setting_changed)
+        self.opacity_value = QLabel(f"{self.opacity.value()}%")
+        self.opacity.valueChanged.connect(lambda v: self.opacity_value.setText(f"{v}%"))
+        
+        row_op = QHBoxLayout()
+        row_op.addWidget(self.opacity)
+        row_op.addWidget(self.opacity_value)
+        grid_op.addRow("全局不透明度:", row_op)
+
+        self.bg_opacity = QSlider(Qt.Horizontal)
+        self.bg_opacity.setRange(0, 100)
+        self.bg_opacity.setValue(int(self.s.get("bg_opacity", 100)))
+        self.bg_opacity.valueChanged.connect(self._on_setting_changed)
+        self.bg_opacity_value = QLabel(f"{self.bg_opacity.value()}%")
+        self.bg_opacity.valueChanged.connect(lambda v: self.bg_opacity_value.setText(f"{v}%"))
+        
+        row_bg_op = QHBoxLayout()
+        row_bg_op.addWidget(self.bg_opacity)
+        row_bg_op.addWidget(self.bg_opacity_value)
+        grid_op.addRow("背景不透明度:", row_bg_op)
+        
+        lay_view.addLayout(grid_op)
+        main_layout.addWidget(grp_view)
+
+        # === 分组3：布局与尺寸 ===
+        grp_layout = QGroupBox("布局与尺寸")
+        lay_lo = QFormLayout(grp_layout)
+        
+        # 周数
         self.weeks = QSpinBox()
         self.weeks.setRange(1, 52) 
         self.weeks.setValue(int(self.s.get("weeks", 4)))
         self.weeks.valueChanged.connect(self._on_setting_changed)
-        
-        row.addWidget(self.weeks)
-        row.addStretch(1) 
-        lay.addLayout(row)
+        lay_lo.addRow("显示周数:", self.weeks)
 
-        # --- 字号 ---
-        row = QHBoxLayout()
-        row.addWidget(QLabel("文字字号"))
+        # 字号
         self.font_size = QSpinBox()
         self.font_size.setRange(8, 36)
         self.font_size.setValue(int(self.s.get("font_size", 12))) 
         self.font_size.valueChanged.connect(self._on_setting_changed)
+        lay_lo.addRow("字体大小:", self.font_size)
         
-        row.addWidget(self.font_size)
-        row.addStretch(1) 
-        lay.addLayout(row)
+        # 尺寸滑块
+        def make_slider_row(key, min_v, max_v, scale=1):
+            sl = QSlider(Qt.Horizontal)
+            sl.setRange(min_v, max_v)
+            val = int(self.s.get(key, min_v))
+            sl.setValue(val)
+            sl.valueChanged.connect(self._on_setting_changed)
+            lbl = QLabel(str(val))
+            sl.valueChanged.connect(lambda v: lbl.setText(str(v)))
+            r = QHBoxLayout()
+            r.addWidget(sl)
+            r.addWidget(lbl)
+            return sl, lbl, r
 
-        # --- 格子尺寸 ---
-        row = QHBoxLayout()
-        row.addWidget(QLabel("格子宽度"))
-        self.cell_w = QSlider(Qt.Horizontal)
-        self.cell_w.setRange(90, 360)
-        self.cell_w.setValue(int(self.s.get("cell_width", 140)))
-        self.cell_w.setTickInterval(10)
-        self.cell_w.setTickPosition(QSlider.TicksBelow)
-        self.cell_w.valueChanged.connect(self._on_setting_changed)
+        self.cell_w, self.cell_w_value, row_cw = make_slider_row("cell_width", 90, 360)
+        lay_lo.addRow("格子宽度:", row_cw)
         
-        self.cell_w_value = QLabel(str(self.cell_w.value()))
-        self.cell_w.valueChanged.connect(lambda value: self.cell_w_value.setText(str(value)))
+        self.cell_h, self.cell_h_value, row_ch = make_slider_row("cell_height", 90, 360)
+        lay_lo.addRow("格子高度:", row_ch)
         
-        row.addWidget(self.cell_w)
-        row.addWidget(self.cell_w_value)
+        self.row_gap, self.row_gap_value, row_rg = make_slider_row("row_gap", 0, 60)
+        lay_lo.addRow("行间距:", row_rg)
         
-        row.addWidget(QLabel("格子高度"))
-        self.cell_h = QSlider(Qt.Horizontal)
-        self.cell_h.setRange(90, 360)
-        self.cell_h.setValue(int(self.s.get("cell_height", 110)))
-        self.cell_h.setTickInterval(10)
-        self.cell_h.setTickPosition(QSlider.TicksBelow)
-        self.cell_h.valueChanged.connect(self._on_setting_changed)
+        self.col_gap, self.col_gap_value, row_cg = make_slider_row("col_gap", 0, 60)
+        lay_lo.addRow("列间距:", row_cg)
         
-        self.cell_h_value = QLabel(str(self.cell_h.value()))
-        self.cell_h.valueChanged.connect(lambda value: self.cell_h_value.setText(str(value)))
-        
-        row.addWidget(self.cell_h)
-        row.addWidget(self.cell_h_value)
-        lay.addLayout(row)
-
-        # --- 间距 ---
-        row = QHBoxLayout()
-        row.addWidget(QLabel("行间距"))
-        self.row_gap = QSlider(Qt.Horizontal)
-        self.row_gap.setRange(0, 60)
-        self.row_gap.setValue(int(self.s.get("row_gap", 6)))
-        self.row_gap.setTickInterval(5)
-        self.row_gap.setTickPosition(QSlider.TicksBelow)
-        self.row_gap.valueChanged.connect(self._on_setting_changed)
-        
-        self.row_gap_value = QLabel(str(self.row_gap.value()))
-        self.row_gap.valueChanged.connect(lambda value: self.row_gap_value.setText(str(value)))
-        
-        row.addWidget(self.row_gap)
-        row.addWidget(self.row_gap_value)
-
-        row.addWidget(QLabel("列间距"))
-        self.col_gap = QSlider(Qt.Horizontal)
-        self.col_gap.setRange(0, 60)
-        self.col_gap.setValue(int(self.s.get("col_gap", 6)))
-        self.col_gap.setTickInterval(5)
-        self.col_gap.setTickPosition(QSlider.TicksBelow)
-        self.col_gap.valueChanged.connect(self._on_setting_changed)
-        
-        self.col_gap_value = QLabel(str(self.col_gap.value()))
-        self.col_gap.valueChanged.connect(lambda value: self.col_gap_value.setText(str(value)))
-        
-        row.addWidget(self.col_gap)
-        row.addWidget(self.col_gap_value)
-        lay.addLayout(row)
-
-        # --- 透明度设置 ---
-        # 1. 全局透明度
-        row_glob = QHBoxLayout()
-        row_glob.addWidget(QLabel("全局透明度"))
-        self.opacity = QSlider(Qt.Horizontal)
-        self.opacity.setRange(20, 100) # 保持最低可见
-        self.opacity.setValue(int(float(self.s.get("opacity", 0.95)) * 100))
-        self.opacity.setTickInterval(5)
-        self.opacity.setTickPosition(QSlider.TicksBelow)
-        self.opacity.valueChanged.connect(self._on_setting_changed)
-        
-        self.opacity_value = QLabel(f"{self.opacity.value()}%")
-        self.opacity.valueChanged.connect(lambda value: self.opacity_value.setText(f"{value}%"))
-        
-        row_glob.addWidget(self.opacity)
-        row_glob.addWidget(self.opacity_value)
-        lay.addLayout(row_glob)
-
-        # 2. 背景不透明度
-        row_bg = QHBoxLayout()
-        row_bg.addWidget(QLabel("背景不透明度"))
-        self.bg_opacity = QSlider(Qt.Horizontal)
-        self.bg_opacity.setRange(0, 100) # 可以到0
-        self.bg_opacity.setValue(int(self.s.get("bg_opacity", 100)))
-        self.bg_opacity.setTickInterval(5)
-        self.bg_opacity.setTickPosition(QSlider.TicksBelow)
-        self.bg_opacity.valueChanged.connect(self._on_setting_changed)
-        
-        self.bg_opacity_value = QLabel(f"{self.bg_opacity.value()}%")
-        self.bg_opacity.valueChanged.connect(lambda value: self.bg_opacity_value.setText(f"{value}%"))
-        
-        row_bg.addWidget(self.bg_opacity)
-        row_bg.addWidget(self.bg_opacity_value)
-        lay.addLayout(row_bg)
-
-        # --- 颜色设置 ---
-        col_grp = QVBoxLayout()
-        
-        # 全局背景色
-        r1 = QHBoxLayout()
-        r1.addWidget(QLabel("全局背景"))
-        self.color_btn = QPushButton()
-        self._update_color_btn(self.color_btn, "bg_color")
-        self.color_btn.clicked.connect(lambda: self._choose_color("bg_color", self.color_btn))
-        r1.addWidget(self.color_btn)
-        
-        # 全局默认字体色
-        r1.addWidget(QLabel("默认字体"))
-        self.font_color_btn = QPushButton()
-        self._update_color_btn(self.font_color_btn, "font_color")
-        self.font_color_btn.clicked.connect(lambda: self._choose_color("font_color", self.font_color_btn))
-        r1.addWidget(self.font_color_btn)
-        col_grp.addLayout(r1)
-        
-        # 优先级颜色
-        r2 = QHBoxLayout()
-        r2.addWidget(QLabel("高优先级"))
-        self.btn_p_high = QPushButton()
-        self._update_color_btn(self.btn_p_high, "font_color_high")
-        self.btn_p_high.clicked.connect(lambda: self._choose_color("font_color_high", self.btn_p_high))
-        r2.addWidget(self.btn_p_high)
-        
-        r2.addWidget(QLabel("中优先级"))
-        self.btn_p_med = QPushButton()
-        self._update_color_btn(self.btn_p_med, "font_color_medium")
-        self.btn_p_med.clicked.connect(lambda: self._choose_color("font_color_medium", self.btn_p_med))
-        r2.addWidget(self.btn_p_med)
-
-        r2.addWidget(QLabel("低优先级"))
-        self.btn_p_low = QPushButton()
-        self._update_color_btn(self.btn_p_low, "font_color_low")
-        self.btn_p_low.clicked.connect(lambda: self._choose_color("font_color_low", self.btn_p_low))
-        r2.addWidget(self.btn_p_low)
-        col_grp.addLayout(r2)
-        
-        lay.addLayout(col_grp)
-
-        # --- 复位按钮 ---
-        row = QHBoxLayout()
-        row.addStretch(1)
-        self.reset_btn = QPushButton("复位所有设置")
-        self.reset_btn.clicked.connect(self._reset_settings)
-        row.addWidget(self.reset_btn)
-        lay.addLayout(row)
+        main_layout.addWidget(grp_layout)
 
         # --- 底部按钮 ---
-        row = QHBoxLayout()
+        main_layout.addStretch(1)
+        
+        # 复位
+        h_reset = QHBoxLayout()
+        h_reset.addStretch(1)
+        self.reset_btn = QPushButton("复位默认设置")
+        self.reset_btn.clicked.connect(self._reset_settings)
+        h_reset.addWidget(self.reset_btn)
+        main_layout.addLayout(h_reset)
+        
+        # 功能按钮
+        h_btns = QHBoxLayout()
         self.btn_exit = QPushButton("退出应用")
         self.btn_info = QPushButton("开发信息")
         self.btn_cancel = QPushButton("取消")
@@ -255,14 +259,12 @@ class SettingsDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_ok.clicked.connect(self._on_accept)
 
-        row.addWidget(self.btn_exit) 
-        row.addWidget(self.btn_info) 
-        row.addStretch(1)
-        row.addWidget(self.btn_cancel)
-        row.addWidget(self.btn_ok)
-        lay.addLayout(row)
-
-        self.setLayout(lay)
+        h_btns.addWidget(self.btn_exit) 
+        h_btns.addWidget(self.btn_info) 
+        h_btns.addStretch(1)
+        h_btns.addWidget(self.btn_cancel)
+        h_btns.addWidget(self.btn_ok)
+        main_layout.addLayout(h_btns)
 
     def _export_data(self):
         if not self.main_window: return
@@ -270,7 +272,6 @@ class SettingsDialog(QDialog):
         if file_path:
             if self.main_window.dm.export_data_to_ics(file_path):
                 QMessageBox.information(self, "成功", f"数据已导出到：\n{file_path}")
-                # 打开文件夹
                 folder = os.path.dirname(file_path)
                 try:
                     os.startfile(folder)
@@ -280,10 +281,8 @@ class SettingsDialog(QDialog):
                 QMessageBox.critical(self, "错误", "导出失败，请检查日志。")
 
     def _on_accept(self):
-        # 处理存储模式切换
         new_mode = self.storage_mode.currentData()
         old_mode = self.s.get("storage_mode", "ics")
-        
         if new_mode != old_mode:
             reply = QMessageBox.question(
                 self, "切换存储模式", 
@@ -293,18 +292,16 @@ class SettingsDialog(QDialog):
             if reply == QMessageBox.Yes:
                 if self.main_window:
                     self.main_window.dm.switch_storage_mode(new_mode)
-                    self.s["storage_mode"] = new_mode # 更新本地字典以供返回
+                    self.s["storage_mode"] = new_mode 
             else:
-                # 恢复 UI 显示
                 idx = self.storage_mode.findData(old_mode)
                 self.storage_mode.setCurrentIndex(idx)
                 return
-
         self.accept()
 
     def _update_color_btn(self, btn: QPushButton, key: str):
-        color = self.s.get(key, "#000000") # 默认黑，防止key不存在
-        btn.setStyleSheet(f"background-color: {color};")
+        color = self.s.get(key, "#000000") 
+        btn.setStyleSheet(f"background-color: {color}; border: 1px solid gray;")
 
     def _choose_color(self, key: str, btn: QPushButton):
         curr = self.s.get(key, "#000000")
@@ -315,6 +312,8 @@ class SettingsDialog(QDialog):
             self._on_setting_changed()
 
     def _on_setting_changed(self):
+        # 实时更新自己的样式
+        self._update_dialog_style()
         self.settingsChanged.emit(self.values())
 
     def _reset_settings(self):
@@ -337,7 +336,6 @@ class SettingsDialog(QDialog):
             "font_color_medium": "#000000",
             "font_color_low": "#696969"
         }
-        
         self.s.update(default_settings)
         
         self.weeks.setValue(self.s["weeks"])
@@ -353,7 +351,6 @@ class SettingsDialog(QDialog):
         idx = self.storage_mode.findData("ics")
         self.storage_mode.setCurrentIndex(idx)
         
-        # 刷新所有颜色按钮
         self._update_color_btn(self.color_btn, "bg_color")
         self._update_color_btn(self.font_color_btn, "font_color")
         self._update_color_btn(self.btn_p_high, "font_color_high")
@@ -379,7 +376,6 @@ class SettingsDialog(QDialog):
             "font_color_high": self.s.get("font_color_high", "#FF4500"),
             "font_color_medium": self.s.get("font_color_medium", "#000000"),
             "font_color_low": self.s.get("font_color_low", "#696969"),
-            # storage_mode 
         }
 
     def _exit_app(self):
@@ -415,8 +411,6 @@ class SettingsDialog(QDialog):
 
     def _import_data(self):
         if not self.main_window: return
-        
-        # 提示用户最好先备份
         reply = QMessageBox.information(
             self, "导入数据", 
             "即将从外部 ICS 文件导入数据到当前日历。\n"
@@ -425,14 +419,12 @@ class SettingsDialog(QDialog):
             "是否继续？",
             QMessageBox.Yes | QMessageBox.No
         )
-        
         if reply != QMessageBox.Yes:
             return
 
         file_path, _ = QFileDialog.getOpenFileName(
             self, "选择 ICS 文件", "", "iCalendar Files (*.ics);;All Files (*)"
         )
-        
         if file_path:
             count = self.main_window.dm.import_from_ics(file_path)
             if count > 0:
