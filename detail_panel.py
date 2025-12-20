@@ -18,8 +18,26 @@ class DetailPanel(QWidget):
         self._locked = False
         
         self._undo_stack = deque(maxlen=5)
+        # 初始化设置
+        self.show_time_in_list = self.dm.get_settings().get("show_time_in_list", True)
+        self.p_colors = {
+            "高": self.dm.get_settings().get("font_color_high", "#FF4500"),
+            "中": self.dm.get_settings().get("font_color_medium", "#000000"),
+            "低": self.dm.get_settings().get("font_color_low", "#696969"),
+        }
         
         self._init_ui()
+        self.refresh_today()
+
+    def apply_settings(self, settings: Dict) -> None:
+        """应用设置，支持预览"""
+        self.show_time_in_list = bool(settings.get("show_time_in_list", True))
+        self.p_colors = {
+            "高": settings.get("font_color_high", "#FF4500"),
+            "中": settings.get("font_color_medium", "#000000"),
+            "低": settings.get("font_color_low", "#696969"),
+        }
+        # 刷新界面以应用变更
         self.refresh_today()
 
     def _create_item_widget(self, event: Event, show_date: bool = False) -> QWidget:
@@ -42,17 +60,27 @@ class DetailPanel(QWidget):
         
         time_str = event.start_time.strftime("%H:%M")
         
+        # 根据设置构建文本
+        text_parts = []
         if show_date:
-            date_str = event.start_time.strftime("%m-%d")
-            text = f"[{date_str}] {event.title}  {time_str}"
-        else:
-            text = f"{event.title}  {time_str}"
+            text_parts.append(f"[{event.start_time.strftime('%m-%d')}]")
+        
+        text_parts.append(event.title)
+        
+        if self.show_time_in_list:
+            text_parts.append(time_str)
+        
+        text = "  ".join(text_parts)
             
         label = QLabel(text)
+        
+        # 应用颜色样式
         if event.finished:
             label.setStyleSheet("text-decoration: line-through; color: #888888;") 
         else:
-            label.setStyleSheet("")
+            # 根据优先级设置颜色
+            p_color = self.p_colors.get(event.priority, "#000000")
+            label.setStyleSheet(f"color: {p_color};")
 
         label.setWordWrap(True)
         h_layout.addWidget(label, 1)

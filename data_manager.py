@@ -13,7 +13,8 @@ PRIORITY_MAP = {"高": 0, "中": 1, "低": 2}
 def _default_settings() -> Dict[str, Any]:
     return {
         "window": {"x": 100, "y": 100, "w": 900, "h": 680},
-        "opacity": 0.95,
+        "opacity": 0.95,      # 全局透明度 (0.0 - 1.0)
+        "bg_opacity": 100,    # 背景不透明度 (0 - 100) - 新增
         "bg_color": "#ffffff",
         "font_color": "#000000",
         "weeks": 4,
@@ -23,7 +24,12 @@ def _default_settings() -> Dict[str, Any]:
         "col_gap": 6,
         "locked": False,
         "font_size": 12,
-        "storage_mode": "ics" # 新增：ics 或 sqlite
+        "storage_mode": "ics", 
+        "show_time_in_calendar": True,
+        "show_time_in_list": True,
+        "font_color_high": "#FF4500", 
+        "font_color_medium": "#000000",
+        "font_color_low": "#696969"
     }
 
 class Event:

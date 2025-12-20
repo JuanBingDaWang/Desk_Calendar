@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget, QGridLayout, QLabel, QVBoxLayout, QListWidget, QListWidgetItem
 from PyQt5.QtCore import Qt, pyqtSignal, QDate, QEvent, QSize
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 from datetime import date, timedelta
 from typing import Dict, List
 from data_manager import Event
@@ -25,6 +25,13 @@ class CalendarView(QWidget):
         self.col_gap = 6
         self.font_size = 12 
         self.anchor_monday = CalendarView._monday_of(date.today())
+        self.show_time = True # 默认显示时间
+        # 初始化默认优先级颜色
+        self.p_colors = {
+            "高": "#FF4500",
+            "中": "#000000",
+            "低": "#696969"
+        }
         self._init_ui()
 
     @staticmethod
@@ -49,6 +56,14 @@ class CalendarView(QWidget):
         self.cell_height = int(s.get("cell_height", self.cell_height))
         self.row_gap = int(s.get("row_gap", self.row_gap))
         self.col_gap = int(s.get("col_gap", self.col_gap))
+        self.show_time = bool(s.get("show_time_in_calendar", True)) 
+        
+        # 更新优先级颜色
+        self.p_colors = {
+            "高": s.get("font_color_high", "#FF4500"),
+            "中": s.get("font_color_medium", "#000000"),
+            "低": s.get("font_color_low", "#696969"),
+        }
         
         self.grid.setVerticalSpacing(self.row_gap)
         self.grid.setHorizontalSpacing(self.col_gap)
@@ -193,16 +208,26 @@ class CalendarView(QWidget):
                     prefix = "↻ " 
                 
                 time_str = e.start_time.strftime("%H:%M")
-                item = QListWidgetItem(f"{prefix}{e.title}  {time_str}")
-                item.setData(Qt.UserRole, e) # 存储 Event 对象
+                
+                item_text = f"{prefix}{e.title}"
+                if self.show_time:
+                    item_text += f"  {time_str}"
+                    
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, e) 
 
+                # 设置优先级颜色
+                # 只有未完成的任务才显示优先级颜色，完成的显示灰色
                 if e.finished:
-                    # 显式构造字体以避免丢失 size
                     f = QFont()
                     f.setPointSize(self.font_size)
                     f.setStrikeOut(True)
                     item.setFont(f)
                     item.setForeground(Qt.gray)
+                else:
+                    # 根据优先级获取颜色，默认为黑色
+                    p_color = self.p_colors.get(e.priority, "#000000")
+                    item.setForeground(QColor(p_color))
                     
                 lst.addItem(item)
 

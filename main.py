@@ -66,6 +66,9 @@ class MainWindow(QMainWindow):
         self.tray_icon = None
         self._locked = bool(self.dm.get_settings().get("locked", False))
         
+        # 开启背景透明支持
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
         self.reminder = ReminderManager(self.dm)
         # 连接信号，现在接收的是 Event 对象
         self.reminder.reminderTriggered.connect(self._on_reminder)
@@ -105,6 +108,7 @@ class MainWindow(QMainWindow):
     def _init_ui(self) -> None:
         self.setWindowFlag(Qt.FramelessWindowHint)
         central = QWidget()
+        central.setObjectName("centralWidget") # 设置 ObjectName 方便 QSS 定位
         root = QVBoxLayout(central)
         root.setContentsMargins(5, 5, 5, 5) 
         root.setSpacing(0)
@@ -177,9 +181,15 @@ class MainWindow(QMainWindow):
 
     def _apply_settings_preview(self, s: dict, resize_window: bool = True) -> None:
         self.calendar.apply_settings(s)
+        self.detail.apply_settings(s) 
+        
+        # 1. 应用全局透明度 (Window Opacity)
         self._set_opacity(float(s.get("opacity", 0.95))) 
+        
+        # 2. 应用样式（包括背景颜色+背景透明度）
         self._update_style(
             s.get("bg_color", "#ffffff"),
+            s.get("bg_opacity", 100), # 获取背景不透明度
             s.get("font_color", "#000000"),
             s.get("font_size", 12)
         )
@@ -230,24 +240,60 @@ class MainWindow(QMainWindow):
 
     def _set_opacity(self, v: float) -> None:
         self.setWindowOpacity(v)
-        s = self.dm.get_settings(); s["opacity"] = v
-        self.dm.save_settings(**s)
 
-    def _update_style(self, bg: str, fg: str, font_size: int) -> None:
+    def _hex_to_rgba(self, hex_code: str, alpha_percent: int) -> str:
+        """将 hex 颜色和 0-100 的透明度转换为 rgba 字符串"""
+        hex_code = hex_code.lstrip('#')
+        if len(hex_code) == 6:
+            r = int(hex_code[0:2], 16)
+            g = int(hex_code[2:4], 16)
+            b = int(hex_code[4:6], 16)
+            # Alpha: 0-255
+            a = int(alpha_percent * 255 / 100)
+            return f"rgba({r}, {g}, {b}, {a})"
+        return hex_code
+
+    def _update_style(self, bg_hex: str, bg_opacity: int, fg: str, font_size: int) -> None:
+        # 计算 RGBA 背景色
+        bg_rgba = self._hex_to_rgba(bg_hex, bg_opacity)
+
         style = f"""
-        * {{ background-color: {bg}; color: {fg}; font-size: {font_size}pt; }}
+        /* 针对中心部件设置背景色，支持透明 */
+        #centralWidget {{ 
+            background-color: {bg_rgba}; 
+            color: {fg}; 
+            font-size: {font_size}pt; 
+        }}
+        
+        /* 通配符：所有子控件继承字体颜色和大小 */
+        * {{ color: {fg}; font-size: {font_size}pt; }}
+        
         QToolTip {{ 
             color: black; 
             background-color: #F0F0F0; 
             border: 1px solid #767676; 
         }}
-        QTabBar::tab {{ color: black; }}
-        QLabel {{ border: none; }}
-        QWidget[calendarCell="true"] {{ border: 1px solid #c0c0c0; }}
+        
+        /* Tab 样式：文字固定为黑色 */
+        QTabBar::tab {{ color: #000000; }}
+        
+        QLabel {{ border: none; background-color: transparent; }} /* 标签背景透明 */
+        
+        /* ================= 修改点 2：日历格子 ================= */
+        /* 边框颜色跟随文字颜色 ({fg})，背景透明 */
+        QWidget[calendarCell="true"] {{ border: 1px solid {fg}; background-color: transparent; }}
+        
         QListWidget {{ background-color: transparent; border: none; }}
         QListWidget::item {{ background-color: transparent; }}
-        QListWidget::item:selected {{ background-color: {bg}; color: {fg}; border: 1px solid {fg}; }}
-        QTextEdit {{ background-color: white; border: 1px solid #ccc; padding: 5px; color: black; }}
+        QListWidget::item:selected {{ background-color: {bg_hex}; color: {fg}; border: 1px solid {fg}; }}
+        
+        /* ================= 修改点 1：Detail Panel ================= */
+        /* TabPane 和 TextEdit 背景设置为 transparent，以透出主窗口的背景 */
+        /* 同时边框也跟随文字颜色，保持风格一致 */
+        QTabWidget::pane {{ border: 1px solid {fg}; background-color: transparent; }}
+        QTextEdit {{ background-color: transparent; border: 1px solid {fg}; padding: 5px; color: {fg}; }}
+        
+        /* 按钮保持一定可见性，但文字颜色适配 */
         QPushButton {{ background-color: #e0e0e0; border: 1px solid #c0c0c0; padding: 5px 10px; border-radius: 4px; color: black; }}
         QPushButton:hover {{ background-color: #d0d0d0; }}
         QPushButton:pressed {{ background-color: #c0c0c0; }}
